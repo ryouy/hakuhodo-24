@@ -2,6 +2,8 @@
 
 このドキュメントは、`hakuhodo24.ipynb` が行う処理の全体像を、入力準備から成果物生成まで順番に説明したものです。Google Colab上でノートブックを上から実行する前提で、各セルが担う役割、途中で作られるファイル、最終的に得られる成果物を整理しています。
 
+![Detailed workflow overview](generated_images/workflow-detail-01-overview.png)
+
 ## 1. 目的
 
 このノートブックの目的は、既存のサービス紹介資料をAIで読み解き、その内容をもとに学生や留学生の課題を考察し、新しいITサービス案と提案資料を生成することです。
@@ -134,6 +136,8 @@ API呼び出しなど一時的に失敗する可能性がある処理を、最�
 
 ## 6. 資料の読み込みと前処理
 
+![Document preprocessing flow](generated_images/workflow-detail-02-preprocess.png)
+
 前処理では、PDFとPowerPointをそれぞれ別の用途で読み込みます。
 
 PDFは見た目の情報を取得するために使います。`convert_from_path` で各ページをPNG画像へ変換し、`slides/` フォルダへ保存します。
@@ -183,6 +187,8 @@ slides/
 この段階で、元資料の内容はページ別の要約テキストとして扱いやすい形になります。
 
 ## 8. 学生ペルソナによる段階的な議論
+
+![Persona discussion to output flow](generated_images/workflow-detail-03-ideation-output.png)
 
 スライド解析結果をもとに、3名の大学生ペルソナを生成し、段階的な議論を行います。
 

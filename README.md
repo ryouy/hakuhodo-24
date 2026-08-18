@@ -4,6 +4,8 @@
 
 プレゼン資料をAIで解析し、学生・留学生が抱える課題の考察から、新規ITサービス案と提案資料の生成までを行うGoogle Colab用ノートブックです。
 
+処理の詳細な流れは [WORKFLOW_DETAIL.md](WORKFLOW_DETAIL.md) にまとめています。
+
 ## Features
 
 - Google DriveからPDFとPowerPointを読み込み
@@ -97,13 +99,16 @@ api_key_sc
 
 ```text
 .
-├── hakuhodo24_fixed.ipynb
+├── hakuhodo24.ipynb
 ├── README.md
+├── WORKFLOW_DETAIL.md
 └── generated_images/
     ├── readme-01-workflow.png
     ├── readme-02-document-import.png
     ├── readme-03-ai-analysis.png
     ├── readme-04-persona-discussion.png
-    └── readme-05-service-concept.png
+    ├── readme-05-service-concept.png
+    ├── workflow-detail-01-overview.png
+    ├── workflow-detail-02-preprocess.png
+    └── workflow-detail-03-ideation-output.png
 ```
-
