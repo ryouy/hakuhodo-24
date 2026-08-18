@@ -43,7 +43,7 @@ client = OpenAI(api_key=api_key)
 標準の入力と出力はここで固定します。
 
 ```python
-SOURCE_DIR = Path('/content/drive/MyDrive/紹介資料/サービス名')
+SOURCE_DIR = Path('/content/drive/MyDrive/サービス紹介資料/サービス')
 PDF_NAME = 'サービス紹介スライド.pdf'
 PPTX_NAME = 'サービス紹介スライド.pptx'
 

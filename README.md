@@ -33,7 +33,7 @@ PDF / PPTX
 Google Drive上のPDFとPowerPointを読み込みます。
 
 ```python
-SOURCE_DIR = Path('/content/drive/MyDrive/紹介資料/サービス名')
+SOURCE_DIR = Path('/content/drive/MyDrive/サービス紹介資料/サービス')
 PDF_NAME = 'サービス紹介スライド.pdf'
 PPTX_NAME = 'サービス紹介スライド.pptx'
 ```
@@ -95,7 +95,7 @@ api_key_sc
 ## Output
 
 ```text
-/content/drive/MyDrive/紹介資料/サービス名/hakuhodo24_output/
+/content/drive/MyDrive/サービス紹介資料/サービス/hakuhodo24_output/
 ```
 
 | Path | Description |
