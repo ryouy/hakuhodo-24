@@ -43,9 +43,9 @@ client = OpenAI(api_key=api_key)
 標準の入力と出力はここで固定します。
 
 ```python
-SOURCE_DIR = Path('/content/drive/MyDrive/サービス紹介資料/サービス')
-PDF_NAME = 'サービス紹介スライド.pdf'
-PPTX_NAME = 'サービス紹介スライド.pptx'
+SOURCE_DIR = Path('/content/drive/MyDrive/サービス紹介資料/サンプルサービス')
+PDF_NAME = 'サービス紹介スライド.pdf'
+PPTX_NAME = 'サービス紹介スライド.pptx'
 
 WORK_DIR = SOURCE_DIR / 'hakuhodo24_output'
 SLIDES_DIR = WORK_DIR / 'slides'
@@ -57,8 +57,11 @@ GENERATED_DIR = WORK_DIR / 'generated_images'
 必要なファイルは2つです。
 
 ```text
-サービス紹介スライド.pdf
-サービス紹介スライド.pptx
+MyDrive/
+└── サービス紹介資料/
+    └── サンプルサービス/
+        ├── サービス紹介スライド.pdf
+        └── サービス紹介スライド.pptx
 ```
 
 存在チェックは早めに行います。入力がない状態でAI処理まで進まないためのガードです。

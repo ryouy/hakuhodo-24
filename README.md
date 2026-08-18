@@ -32,10 +32,18 @@ PDF / PPTX
 
 Google Drive上のPDFとPowerPointを読み込みます。
 
+```text
+MyDrive/
+└── サービス紹介資料/
+    └── サンプルサービス/
+        ├── サービス紹介スライド.pdf
+        └── サービス紹介スライド.pptx
+```
+
 ```python
-SOURCE_DIR = Path('/content/drive/MyDrive/サービス紹介資料/サービス')
-PDF_NAME = 'サービス紹介スライド.pdf'
-PPTX_NAME = 'サービス紹介スライド.pptx'
+SOURCE_DIR = Path('/content/drive/MyDrive/サービス紹介資料/サンプルサービス')
+PDF_NAME = 'サービス紹介スライド.pdf'
+PPTX_NAME = 'サービス紹介スライド.pptx'
 ```
 
 ### 2. Analyze
@@ -76,8 +84,8 @@ marp_path.write_text(marp, encoding='utf-8')
 - Google Colab
 - Google Drive
 - OpenAI API key
-- `サービス紹介スライド.pdf`
-- `サービス紹介スライド.pptx`
+- `サービス紹介スライド.pdf`
+- `サービス紹介スライド.pptx`
 
 Colabのシークレットには次の名前でAPIキーを登録します。
 
@@ -95,7 +103,7 @@ api_key_sc
 ## Output
 
 ```text
-/content/drive/MyDrive/サービス紹介資料/サービス/hakuhodo24_output/
+/content/drive/MyDrive/サービス紹介資料/サンプルサービス/hakuhodo24_output/
 ```
 
 | Path | Description |
