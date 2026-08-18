@@ -1,332 +1,299 @@
-# hakuhodo24 Detailed Workflow
+# Workflow Detail
 
-このドキュメントは、`hakuhodo24.ipynb` が行う処理の全体像を、入力準備から成果物生成まで順番に説明したものです。Google Colab上でノートブックを上から実行する前提で、各セルが担う役割、途中で作られるファイル、最終的に得られる成果物を整理しています。
+`hakuhodo24.ipynb` は、資料解析、課題発見、サービス企画、提案資料生成を1本のColab notebookにまとめたパイプラインです。
 
 ![Detailed workflow overview](generated_images/workflow-detail-01-overview.png)
 
-## 1. 目的
-
-このノートブックの目的は、既存のサービス紹介資料をAIで読み解き、その内容をもとに学生や留学生の課題を考察し、新しいITサービス案と提案資料を生成することです。
-
-大きな流れは次のとおりです。
-
-1. Google DriveからPDFとPowerPointを読み込む
-2. PDFをページごとの画像に変換する
-3. PowerPointからスライドごとのテキストを抽出する
-4. 画像とテキストを組み合わせてAIにスライドを解析させる
-5. スライド全体の要約をもとに学生ペルソナ同士の議論を進める
-6. 議論結果から留学生向けのITサービス案をJSONで生成する
-7. サービス案に合わせた提案用画像を生成する
-8. Marp形式の提案資料Markdownを出力する
-
-## 2. 入力ファイルと実行環境
-
-実行環境はGoogle Colabを想定しています。ノートブックではGoogle Driveをマウントし、Drive上の指定フォルダから入力ファイルを読み込みます。
-
-標準の入力フォルダは次の場所です。
+## Architecture
 
 ```text
-/content/drive/MyDrive/ブランチズム紹介資料/Splannt/
+Google Drive
+  -> PDF / PPTX
+  -> slide_XXX.png + slide_XXX.txt
+  -> slide_XXX_analysis.txt
+  -> presentation_summary.txt
+  -> discussion_results.txt
+  -> service_idea.json
+  -> generated_images/*.png
+  -> service_pitch.md
 ```
 
-標準で必要な入力ファイルは次の2つです。
+処理の中心は、PDFのビジュアル情報とPowerPointのテキスト情報を分離して取り出し、あとでAI解析に合流させる構成です。
 
-```text
-[Splannt]サービス紹介スライド.pdf
-[Splannt]サービス紹介スライド.pptx
-```
+## Runtime
 
-ファイル名や保存先が違う場合は、ノートブック冒頭の設定値を変更します。
+Colabで依存関係を入れます。
 
 ```python
-SOURCE_DIR = Path('/content/drive/MyDrive/ブランチズム紹介資料/Splannt')
-PDF_NAME = '[Splannt]サービス紹介スライド.pdf'
-PPTX_NAME = '[Splannt]サービス紹介スライド.pptx'
+!pip -q install -U openai python-pptx pdf2image Pillow requests matplotlib
+!apt-get -qq update && apt-get -qq install -y poppler-utils
 ```
 
-OpenAI APIキーはColabのシークレットから取得します。シークレット名は次の値です。
-
-```text
-api_key_sc
-```
-
-APIキーをコードに直接書かないため、ノートブック共有時にキーが漏れるリスクを抑えられます。
-
-## 3. 初期セットアップ
-
-最初のコードセルでは、必要なPythonライブラリとシステムパッケージをインストールします。
-
-```text
-openai
-python-pptx
-pdf2image
-Pillow
-requests
-matplotlib
-poppler-utils
-```
-
-それぞれの主な役割は次のとおりです。
-
-| パッケージ | 役割 |
-| --- | --- |
-| `openai` | OpenAI APIを呼び出し、文章解析と画像生成を行う |
-| `python-pptx` | PowerPointファイルからスライド内テキストを抽出する |
-| `pdf2image` | PDFの各ページを画像に変換する |
-| `Pillow` | 画像ファイルの保存、表示、読み込みを行う |
-| `requests` | 画像生成結果がURLで返った場合に画像を取得する |
-| `matplotlib` | Colab上での補助的な画像表示に使える |
-| `poppler-utils` | `pdf2image` がPDFを画像化するために必要 |
-
-## 4. Drive接続と設定値の準備
-
-次のコードセルでは、Google Driveをマウントし、OpenAIクライアントを初期化します。
+APIキーはColab Secretから取得します。コードへ直書きしません。
 
 ```python
+from google.colab import drive, userdata
+from openai import OpenAI
+
 drive.mount('/content/drive')
 api_key = userdata.get('api_key_sc')
 client = OpenAI(api_key=api_key)
 ```
 
-APIキーが見つからない場合はエラーを出して処理を止めます。これにより、APIキー未設定のまま後続処理へ進んで失敗することを防ぎます。
-
-同じセルで、出力先フォルダも定義します。
+標準の入力と出力はここで固定します。
 
 ```python
+SOURCE_DIR = Path('/content/drive/MyDrive/紹介資料/サービス名')
+PDF_NAME = 'サービス紹介スライド.pdf'
+PPTX_NAME = 'サービス紹介スライド.pptx'
+
 WORK_DIR = SOURCE_DIR / 'hakuhodo24_output'
 SLIDES_DIR = WORK_DIR / 'slides'
 GENERATED_DIR = WORK_DIR / 'generated_images'
 ```
 
-出力フォルダは自動作成されます。標準では次の構造になります。
+## Input Contract
+
+必要なファイルは2つです。
+
+```text
+サービス紹介スライド.pdf
+サービス紹介スライド.pptx
+```
+
+存在チェックは早めに行います。入力がない状態でAI処理まで進まないためのガードです。
+
+```python
+def require_file(path):
+    if not path.exists():
+        raise FileNotFoundError(f'入力ファイルが見つかりません: {path}')
+```
+
+## Preprocess
+
+![Document preprocessing flow](generated_images/workflow-detail-02-preprocess.png)
+
+PDFは見た目、PPTXは文字。役割を分けます。
+
+```python
+images = convert_from_path(str(pdf_path), dpi=150)
+for i, image in enumerate(images, 1):
+    image.save(SLIDES_DIR / f'slide_{i:03d}.png', 'PNG')
+```
+
+```python
+prs = Presentation(str(pptx_path))
+for i, slide in enumerate(prs.slides, 1):
+    parts = [
+        shape.text.strip()
+        for shape in slide.shapes
+        if hasattr(shape, 'text') and shape.text.strip()
+    ]
+    (SLIDES_DIR / f'slide_{i:03d}.txt').write_text(
+        '\n'.join(parts),
+        encoding='utf-8',
+    )
+```
+
+ページ数がずれても、処理対象は共通範囲に絞ります。
+
+```python
+slide_count = min(len(images), len(prs.slides))
+```
+
+## Slide Analysis
+
+各ページで `image -> visual summary`、`text + visual summary -> page summary` の順に処理します。
+
+```python
+def image_data_url(path):
+    mime = 'image/png' if path.suffix.lower() == '.png' else 'image/jpeg'
+    data = base64.b64encode(path.read_bytes()).decode('ascii')
+    return f'data:{mime};base64,{data}'
+```
+
+```python
+def vision_chat(question, image_path, max_output_tokens=400):
+    r = client.responses.create(
+        model=TEXT_MODEL,
+        input=[{
+            'role': 'user',
+            'content': [
+                {'type': 'input_text', 'text': question},
+                {'type': 'input_image', 'image_url': image_data_url(Path(image_path))},
+            ],
+        }],
+        max_output_tokens=max_output_tokens,
+    )
+    return r.output_text.strip()
+```
+
+ループはページ単位です。
+
+```python
+page_summaries = []
+
+for i in range(1, slide_count + 1):
+    img = SLIDES_DIR / f'slide_{i:03d}.png'
+    txt = (SLIDES_DIR / f'slide_{i:03d}.txt').read_text(encoding='utf-8')
+
+    visual = retry(vision_chat, 'このプレゼンページを日本語200文字以内で説明してください。', img)
+    summary = retry(text_chat, prompt, 500)
+
+    (SLIDES_DIR / f'slide_{i:03d}_analysis.txt').write_text(summary, encoding='utf-8')
+    page_summaries.append(f'ページ{i}: {summary}')
+```
+
+集約結果は `presentation_summary.txt` に保存します。
+
+```python
+presentation_summary = '\n'.join(page_summaries)
+(WORK_DIR / 'presentation_summary.txt').write_text(presentation_summary, encoding='utf-8')
+```
+
+## Persona Loop
+
+![Persona discussion to output flow](generated_images/workflow-detail-03-ideation-output.png)
+
+資料要約を起点に、学生ペルソナの議論を6フェーズで回します。
+
+```python
+phases = [
+    '学生が抱える悩みを推測する',
+    '悩みから生じる深刻な問題を挙げる',
+    '問題から派生する課題を挙げる',
+    '課題の共通点を特定する',
+    'ITを使った解決の方向性を具体化する',
+    '留学生にも有効な新規ITサービス案を具体化する',
+]
+```
+
+各フェーズでは、ペルソナを生成し、短い発言を数ターン積み上げ、最後に要約します。
+
+```python
+def discuss(phase_instruction, context, turns=3):
+    personas = retry(text_chat, persona_prompt, 800)
+    log = []
+
+    for turn in range(turns):
+        log.append(retry(text_chat, turn_prompt, 250))
+
+    return retry(text_chat, summary_prompt, 400)
+```
+
+前のフェーズの出力を、次のフェーズの入力にします。
+
+```python
+context = presentation_summary
+phase_results = []
+
+for i, instruction in enumerate(phases, 1):
+    context = discuss(instruction, context, turns=3)
+    phase_results.append(context)
+
+service_conclusion = phase_results[-1]
+```
+
+## Service JSON
+
+最終フェーズの結論を、アプリケーションで扱いやすいJSONへ変換します。
+
+```python
+idea_prompt = f'''
+次の結論から留学生向けITサービス案をJSONだけで作成してください。
+結論: {service_conclusion}
+形式: {{
+  "service_name": "短い名前",
+  "sub_theme": "短い副題",
+  "problems": ["問題1", "問題2", "問題3"],
+  "solutions": ["解決策1", "解決策2"],
+  "change": "導入後の変化を示す1文"
+}}
+'''
+```
+
+返答はMarkdownフェンスを落としてからパースします。
+
+```python
+raw_idea = retry(text_chat, idea_prompt, 700)
+raw_idea = re.sub(r'^```(?:json)?|```$', '', raw_idea.strip(), flags=re.MULTILINE).strip()
+idea = json.loads(raw_idea)
+```
+
+保存先は `service_idea.json` です。
+
+```python
+(WORK_DIR / 'service_idea.json').write_text(
+    json.dumps(idea, ensure_ascii=False, indent=2),
+    encoding='utf-8',
+)
+```
+
+## Assets And Deck
+
+サービス案から3枚の画像を作ります。
+
+```python
+prompts = [
+    f'留学生が直面する課題を象徴する、文字なしのプレゼン用イラスト。{idea["problems"]}',
+    f'{idea["service_name"]}というITサービスを象徴する、文字なしのプレゼン用イラスト。{idea["solutions"]}',
+    f'留学生が支援を得て前向きに変化する様子。文字なしのプレゼン用イラスト。{idea["change"]}',
+]
+
+for i, prompt in enumerate(prompts, 1):
+    path = retry(generate_image, prompt, GENERATED_DIR / f'image_{i}.png')
+```
+
+最後はMarp Markdownです。JSONの値をそのままスライド構成に流し込みます。
+
+```python
+marp = f'''---
+marp: true
+theme: uncover
+paginate: true
+---
+# {idea['service_name']}
+## {idea['sub_theme']}
+
+![bg left:40%]({generated[1].as_posix()})
+---
+# 解決する問題
+{bullets(idea['problems'])}
+---
+# 提供する解決策
+{bullets(idea['solutions'])}
+---
+# もたらす変化
+{idea['change']}
+'''
+```
+
+```python
+marp_path = WORK_DIR / 'service_pitch.md'
+marp_path.write_text(marp, encoding='utf-8')
+```
+
+## Output Map
 
 ```text
 hakuhodo24_output/
 ├── slides/
-└── generated_images/
+│   ├── slide_001.png
+│   ├── slide_001.txt
+│   └── slide_001_analysis.txt
+├── generated_images/
+│   ├── image_1.png
+│   ├── image_2.png
+│   └── image_3.png
+├── presentation_summary.txt
+├── discussion_results.txt
+├── service_idea.json
+└── service_pitch.md
 ```
 
-## 5. 共通関数の定義
-
-ノートブックでは、以降の処理を読みやすくするために共通関数を先に定義しています。
-
-### `require_file`
-
-入力ファイルが存在するか確認します。PDFまたはPowerPointが見つからない場合は、明示的にエラーを出します。
-
-### `text_chat`
-
-OpenAIのテキスト生成モデルへプロンプトを送り、返答テキストを取り出します。スライド要約、議論、サービス案生成などで使います。
-
-### `image_data_url`
-
-画像ファイルをBase64に変換し、OpenAI APIへ渡せるData URL形式にします。PDFから変換したスライド画像をAIに見せるために使います。
-
-### `vision_chat`
-
-スライド画像と質問文をOpenAI APIへ渡し、画像内容を日本語で説明させます。視覚情報をもとにした分析に使います。
-
-### `generate_image`
-
-画像生成モデルを呼び出し、提案資料用の画像を作成して保存します。APIレスポンスがBase64の場合もURLの場合も扱えるようになっています。
-
-### `retry`
-
-API呼び出しなど一時的に失敗する可能性がある処理を、最大3回まで再試行します。通信やAPI側の短い失敗で処理全体が止まることを減らします。
-
-## 6. 資料の読み込みと前処理
-
-![Document preprocessing flow](generated_images/workflow-detail-02-preprocess.png)
-
-前処理では、PDFとPowerPointをそれぞれ別の用途で読み込みます。
-
-PDFは見た目の情報を取得するために使います。`convert_from_path` で各ページをPNG画像へ変換し、`slides/` フォルダへ保存します。
-
-```text
-slides/slide_001.png
-slides/slide_002.png
-...
-```
-
-PowerPointは文字情報を取得するために使います。`python-pptx` でスライド内のテキストを抽出し、ページごとのテキストファイルとして保存します。
-
-```text
-slides/slide_001.txt
-slides/slide_002.txt
-...
-```
-
-PDFのページ数とPowerPointのスライド数が異なる場合は、両方に存在する共通ページ数だけを処理対象にします。これにより、片方だけに余分なページがある場合でも処理を継続できます。
-
-## 7. スライド単位のAI解析
-
-各スライドについて、画像情報とテキスト情報を組み合わせて解析します。
-
-処理はページごとに次の順番で進みます。
-
-1. `slide_001.png` のようなスライド画像を読み込む
-2. `slide_001.txt` のような抽出済みテキストを読み込む
-3. `vision_chat` で画像の内容を日本語200文字以内で説明させる
-4. 画像説明と抽出テキストを合わせて、`text_chat` でページ内容を要約する
-5. 要約結果を `slide_001_analysis.txt` のようなファイルに保存する
-6. 全ページ分の要約を `presentation_summary.txt` にまとめる
-
-出力例は次のような構造になります。
-
-```text
-slides/
-├── slide_001.png
-├── slide_001.txt
-├── slide_001_analysis.txt
-├── slide_002.png
-├── slide_002.txt
-├── slide_002_analysis.txt
-└── ...
-```
-
-この段階で、元資料の内容はページ別の要約テキストとして扱いやすい形になります。
-
-## 8. 学生ペルソナによる段階的な議論
-
-![Persona discussion to output flow](generated_images/workflow-detail-03-ideation-output.png)
-
-スライド解析結果をもとに、3名の大学生ペルソナを生成し、段階的な議論を行います。
-
-議論フェーズは次の6段階です。
-
-| フェーズ | 内容 |
-| --- | --- |
-| 1 | 資料を踏まえ、学生が抱える悩みを当事者意識を持って推測する |
-| 2 | 悩みから生じる具体的かつ深刻な問題を挙げる |
-| 3 | 問題から派生する課題を幅広く挙げる |
-| 4 | 課題の共通点を俯瞰して特定する |
-| 5 | ITを使った解決の方向性を具体化する |
-| 6 | 留学生にも有効な新規ITサービス案を具体化する |
-
-各フェーズでは、まずその時点のテーマに合わせて3名のペルソナを作成します。ペルソナには、名前、背景、価値観、口調が設定されます。
-
-その後、3ターン分の発言を生成し、最後に議論内容を200文字以内で要約します。この要約が次のフェーズの文脈として引き継がれます。
-
-つまり、議論は毎回独立しているのではなく、次のように連鎖します。
-
-```text
-資料要約
-  ↓
-フェーズ1の議論結果
-  ↓
-フェーズ2の議論結果
-  ↓
-フェーズ3の議論結果
-  ↓
-フェーズ4の議論結果
-  ↓
-フェーズ5の議論結果
-  ↓
-フェーズ6のサービス案の方向性
-```
-
-すべてのフェーズ結果は次のファイルに保存されます。
-
-```text
-discussion_results.txt
-```
-
-## 9. ITサービス案のJSON生成
-
-最後の議論結果をもとに、留学生向けITサービス案をJSON形式で生成します。
-
-JSONには次の項目が含まれます。
-
-| キー | 内容 |
-| --- | --- |
-| `service_name` | サービスの短い名前 |
-| `sub_theme` | サービスの副題やテーマ |
-| `problems` | 解決対象となる問題のリスト |
-| `solutions` | 提供する解決策のリスト |
-| `change` | 導入後に起きる変化を示す一文 |
-
-生成結果は `json.loads` で読み込まれるため、Markdownや説明文を混ぜず、JSONだけを返すようにプロンプトで指定しています。保存先は次のファイルです。
-
-```text
-service_idea.json
-```
-
-このJSONは、後続の画像生成と提案資料作成の元データになります。
-
-## 10. 提案資料用画像の生成
-
-サービス案に合わせて、提案資料に使う画像を3枚生成します。
-
-生成される画像の意図は次のとおりです。
-
-| 画像 | 内容 |
-| --- | --- |
-| `image_1.png` | 留学生が直面する課題を象徴する画像 |
-| `image_2.png` | 新規ITサービスの価値や解決策を象徴する画像 |
-| `image_3.png` | サービス導入後の前向きな変化を表す画像 |
-
-保存先は次のフォルダです。
-
-```text
-generated_images/
-```
-
-画像生成プロンプトでは、プレゼン資料に使いやすいように「文字なし」「洗練されたイラスト」という条件を付けています。これにより、スライド上のテキストと画像内の文字が競合しにくくなります。
-
-## 11. Marp Markdownの生成
-
-最後に、生成したサービス案と画像を使って、Marp形式の提案資料Markdownを作成します。
-
-出力ファイルは次のとおりです。
-
-```text
-service_pitch.md
-```
-
-スライド構成は4枚です。
-
-| スライド | 内容 |
-| --- | --- |
-| 1 | サービス名とサブテーマ |
-| 2 | 解決する問題 |
-| 3 | 提供する解決策 |
-| 4 | もたらす変化 |
-
-各スライドには、対応する生成画像が背景画像として配置されます。Marpに読み込ませることで、Markdownからプレゼン資料へ変換できます。
-
-## 12. 最終的な出力物
-
-標準設定での成果物は、次のフォルダにまとめて保存されます。
-
-```text
-/content/drive/MyDrive/ブランチズム紹介資料/Splannt/hakuhodo24_output/
-```
-
-主な出力物は次のとおりです。
-
-| 出力 | 内容 |
-| --- | --- |
-| `slides/*.png` | PDFから変換されたスライド画像 |
-| `slides/*.txt` | PowerPointから抽出されたスライドテキスト |
-| `slides/*_analysis.txt` | 画像とテキストを統合したページ別AI解析 |
-| `presentation_summary.txt` | プレゼン全体のページ別要約 |
-| `discussion_results.txt` | ペルソナ議論の各フェーズ結果 |
-| `service_idea.json` | 生成された留学生向けITサービス案 |
-| `generated_images/*.png` | 提案資料用に生成された画像 |
-| `service_pitch.md` | Marp形式の提案資料 |
-
-## 13. 実行時の注意点
-
-OpenAI APIを使うため、実行にはAPI利用料金が発生します。特に画像生成はテキスト生成よりコストが高くなる可能性があります。
-
-PDFの画像化やAI解析には時間がかかります。ページ数が多い資料では、スライド解析のループに時間がかかるため、Colabのランタイムが切断されないよう注意してください。
-
-PowerPointから抽出できるテキストは、スライド上の通常テキストが中心です。画像化された文字、装飾的な図形内の文字、埋め込み画像内の文字は抽出できない場合があります。その不足分を補うために、PDF画像をAIに見せる処理を組み合わせています。
-
-生成される議論結果やサービス案はAIの出力に依存します。同じ入力でも実行タイミングによって表現や細部が変わる可能性があります。必要に応じて、プロンプト、モデル、出力文字数、議論ターン数を調整してください。
-
-## 14. 全体像のまとめ
-
-このノートブックは、単に資料を要約するだけではなく、資料理解から課題発見、アイデア創出、提案資料作成までを一続きの流れとして自動化しています。
-
-入力資料はPDFとPowerPointの2種類を使い、PDFからは見た目、PowerPointからは文字情報を取り出します。その両方をAI解析に使うことで、スライドの意味をページごとに整理します。次に、整理された内容を学生ペルソナの議論へ渡し、悩み、問題、課題、共通点、ITによる解決策へと段階的に深掘りします。最後に、その結論から留学生向けのITサービス案を構造化し、画像とMarp Markdownを生成して、提案資料として利用できる形にします。
+## Notes
+
+- 画像生成はAPIコストが大きくなりやすいです。
+- ページ数が多いPDFではスライド解析ループに時間がかかります。
+- PPTXから取れるのは通常テキストが中心です。画像内文字はPDF画像のvision解析で補います。
+- AI出力は実行ごとに揺れます。固定したい場合はプロンプト、モデル、出力文字数、議論ターン数を調整します。

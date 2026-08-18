@@ -1,101 +1,113 @@
-# hakuhodo24_fixed.ipynb
+# hakuhodo24
 
 ![Project workflow](generated_images/readme-01-workflow.png)
 
-プレゼン資料をAIで解析し、学生・留学生が抱える課題の考察から、新規ITサービス案と提案資料の生成までを行うGoogle Colab用ノートブックです。
+AIでプレゼン資料を読み解き、学生・留学生の課題整理から新規ITサービス案、提案資料の生成までを一気通貫で行うGoogle Colab notebookです。
 
-処理の詳細な流れは [WORKFLOW_DETAIL.md](WORKFLOW_DETAIL.md) にまとめています。
+詳細な処理フローは [WORKFLOW_DETAIL.md](WORKFLOW_DETAIL.md) にまとめています。
 
-## Features
+## What It Does
 
-- Google DriveからPDFとPowerPointを読み込み
-- PDFをページごとの画像へ変換
+- PDFをスライド画像へ変換
 - PowerPointからスライドテキストを抽出
-- OpenAI APIによる画像・テキストの統合解析
-- 学生ペルソナによる段階的な議論
-- 留学生向けITサービス案の生成
-- 提案資料用画像とMarp Markdownの出力
+- 画像とテキストをOpenAI APIで統合解析
+- 学生ペルソナによる課題ディスカッションを生成
+- 留学生向けITサービス案をJSONで構造化
+- 提案用画像とMarp Markdownを出力
 
-## Workflow
+## Pipeline
 
-### 1. プレゼン資料の取り込み
+```text
+PDF / PPTX
+  -> slide images + slide text
+  -> AI slide analysis
+  -> persona discussion
+  -> service_idea.json
+  -> generated images + service_pitch.md
+```
+
+### 1. Import
 
 ![Document import](generated_images/readme-02-document-import.png)
 
-Google Driveに保存されたPDFとPowerPointを読み込みます。PDFはスライド画像へ変換し、PowerPointからはページごとのテキストを抽出します。
+Google Drive上のPDFとPowerPointを読み込みます。
 
-### 2. AIによるスライド解析
+```python
+SOURCE_DIR = Path('/content/drive/MyDrive/紹介資料/サービス名')
+PDF_NAME = 'サービス紹介スライド.pdf'
+PPTX_NAME = 'サービス紹介スライド.pptx'
+```
+
+### 2. Analyze
 
 ![AI slide analysis](generated_images/readme-03-ai-analysis.png)
 
-各ページの画像と抽出テキストをOpenAI APIへ渡し、プレゼン内容をページ単位で解析・要約します。
+PDF由来の画像とPPTX由来のテキストを合わせて、ページ単位で要約します。
 
-### 3. 学生ペルソナによる議論
+```python
+visual = retry(vision_chat, question, img)
+summary = retry(text_chat, prompt, 500)
+```
+
+### 3. Discuss
 
 ![Persona discussion](generated_images/readme-04-persona-discussion.png)
 
-異なる背景を持つ3名の学生ペルソナを生成し、学生が抱える悩み、派生する問題、課題の共通点、ITによる解決策を段階的に議論します。
+3名の学生ペルソナを生成し、悩み、問題、課題、共通点、ITによる解決策へ段階的に深掘りします。
 
-### 4. ITサービス案と提案資料の生成
+```python
+for i, instruction in enumerate(phases, 1):
+    context = discuss(instruction, context, turns=3)
+```
+
+### 4. Generate
 
 ![Service concept](generated_images/readme-05-service-concept.png)
 
-議論結果を基に、留学生向けの新規ITサービス案をJSON形式で整理します。あわせて提案資料用の画像とMarp Markdownを生成します。
+議論結果をサービス案としてJSON化し、提案資料用の画像とMarp Markdownを生成します。
+
+```python
+idea = json.loads(raw_idea)
+marp_path.write_text(marp, encoding='utf-8')
+```
 
 ## Requirements
 
 - Google Colab
 - Google Drive
-- OpenAI APIキー
-- 次の入力ファイル
-  - `[Splannt]サービス紹介スライド.pdf`
-  - `[Splannt]サービス紹介スライド.pptx`
+- OpenAI API key
+- `サービス紹介スライド.pdf`
+- `サービス紹介スライド.pptx`
 
-標準の入力フォルダは次のとおりです。
-
-```text
-/content/drive/MyDrive/ブランチズム紹介資料/Splannt/
-```
-
-ファイルの場所や名前が異なる場合は、ノートブックの設定セルにある `SOURCE_DIR`、`PDF_NAME`、`PPTX_NAME` を変更してください。
-
-## Setup
-
-Google Colabの「シークレット」に、OpenAI APIキーを次の名前で登録します。
+Colabのシークレットには次の名前でAPIキーを登録します。
 
 ```text
 api_key_sc
 ```
 
-登録後、「ノートブックからのアクセス」を有効にしてください。APIキーをコードへ直接記載する必要はありません。
-
 ## Usage
 
-1. `hakuhodo24_fixed.ipynb` をGoogle Colabで開く
-2. Colabのシークレットに `api_key_sc` を登録する
-3. Google Driveへのアクセスを許可する
-4. セルを上から順に実行する
-
-文章解析と画像生成でOpenAI APIを使用するため、実行時間とAPI利用料金が発生します。
+1. `hakuhodo24.ipynb` をGoogle Colabで開く
+2. Colabシークレット `api_key_sc` を有効化
+3. Google Driveへのアクセスを許可
+4. セルを上から順に実行
 
 ## Output
 
-成果物は標準で次のフォルダに保存されます。
-
 ```text
-/content/drive/MyDrive/ブランチズム紹介資料/Splannt/hakuhodo24_output/
+/content/drive/MyDrive/紹介資料/サービス名/hakuhodo24_output/
 ```
 
-| 出力 | 内容 |
+| Path | Description |
 | --- | --- |
-| `slides/` | スライド画像、抽出テキスト、ページごとの解析結果 |
-| `generated_images/` | 提案資料用に生成された画像 |
-| `presentation_summary.txt` | プレゼン全体のページ別要約 |
-| `discussion_results.txt` | 各議論フェーズの結果 |
-| `service_idea.json` | 生成されたITサービス案 |
+| `slides/` | スライド画像、抽出テキスト、ページ別解析 |
+| `generated_images/` | 提案資料用の生成画像 |
+| `presentation_summary.txt` | ページ別要約 |
+| `discussion_results.txt` | ペルソナ議論ログ |
+| `service_idea.json` | サービス案 |
 | `service_pitch.md` | Marp形式の提案資料 |
 
-## Repository Structure
+## Repository
 
 ```text
 .
@@ -103,12 +115,6 @@ api_key_sc
 ├── README.md
 ├── WORKFLOW_DETAIL.md
 └── generated_images/
-    ├── readme-01-workflow.png
-    ├── readme-02-document-import.png
-    ├── readme-03-ai-analysis.png
-    ├── readme-04-persona-discussion.png
-    ├── readme-05-service-concept.png
-    ├── workflow-detail-01-overview.png
-    ├── workflow-detail-02-preprocess.png
-    └── workflow-detail-03-ideation-output.png
+    ├── readme-*.png
+    └── workflow-detail-*.png
 ```
